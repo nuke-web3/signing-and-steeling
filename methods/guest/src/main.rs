@@ -13,11 +13,16 @@
 // limitations under the License.
 
 #![allow(unused_doc_comments)]
+#![no_main]
 
 use alloy_primitives::{address, Address};
 use alloy_sol_types::{sol, SolValue};
 use risc0_steel::{config::ETH_SEPOLIA_CHAIN_SPEC, ethereum::EthEvmInput, Contract};
 use risc0_zkvm::guest::env;
+use k256::{
+    ecdsa::{signature::Verifier, Signature, VerifyingKey},
+    EncodedPoint,
+};
 
 risc0_zkvm::guest::entry!(main);
 
@@ -41,6 +46,27 @@ const CONTRACT: Address = address!("aA8E23Fb1079EA71e0a56F48a2aA51851D8433D0");
 const CALLER: Address = address!("f08A50178dfcDe18524640EA6618a1f965821715");
 
 fn main() {
+    // ------------------------------------------------------------------------
+    // Verify locally signed message
+    // ------------------------------------------------------------------------
+
+    // Decode the verifying key, message, and signature from the inputs.
+    let (encoded_verifying_key, message, signature): (EncodedPoint, Vec<u8>, Signature) = env::read();
+    let verifying_key = VerifyingKey::from_encoded_point(&encoded_verifying_key).unwrap();
+
+    // Verify the signature, panicking if verification fails.
+    verifying_key
+        .verify(&message, &signature)
+        .expect("ECDSA signature verification failed");
+
+    // Commit to the journal the verifying key and message that was signed.
+    env::commit(&(encoded_verifying_key, message));
+
+    // ------------------------------------------------------------------------
+    // Run EVM view call
+    // ------------------------------------------------------------------------
+
+    /////////////////////////
     // Read the input from the guest environment.
     let input: EthEvmInput = env::read();
 

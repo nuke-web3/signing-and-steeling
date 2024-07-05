@@ -12,3 +12,4 @@ erc20-methods = { workspace = true }
 risc0-steel = { version = "0.11.1", features = ["host"] }
 risc0-zkvm = { workspace = true, features = ["client"] }
 tracing-subscriber = { workspace = true }
+k256 = { version = "=0.13.3", features = ["arithmetic", "serde", "expose-field", "std", "ecdsa"], default-features = false }
