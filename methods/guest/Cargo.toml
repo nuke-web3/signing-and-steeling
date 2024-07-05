@@ -10,7 +10,6 @@ edition = "2021"
 ahash = { version = "0.8", default-features = false, features = ["compile-time-rng"] }
 alloy-primitives = { version = "0.7" }
 alloy-sol-types = { version = "0.7" }
-hex-literal = "0.4"
 k256 = { version = "=0.13.3", features = ["arithmetic", "serde", "expose-field", "std", "ecdsa"], default-features = false }
 risc0-steel = "0.11.1"
 risc0-zkvm = { version = "1.0.1", default-features = false, features = ["std"] }

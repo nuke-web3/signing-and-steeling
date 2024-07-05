@@ -768,7 +768,6 @@ dependencies = [
  "ahash",
  "alloy-primitives",
  "alloy-sol-types",
- "hex-literal",
  "k256",
  "risc0-steel",
  "risc0-zkvm",

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use alloy_primitives::{address, Address};
+use alloy_primitives::{address, hex, Address};
 use alloy_sol_types::{sol, SolCall, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -52,7 +52,14 @@ struct Args {
     rpc_url: String,
 
     /// Signing key of account to prove balance
-    #[arg(short, long, env = "SIGNING_KEY")]
+    #[arg(
+        short,
+        long,
+        env = "SIGNING_KEY",
+        // Anvil's default 0th local testnet key
+        // address: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
+        default_value = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    )]
     signing_key: String,
 }
 
@@ -68,9 +75,10 @@ fn main() -> Result<()> {
     // Setting up: Locally signed message
     // ------------------------------------------------------------------------
 
-    // Generate a random secp256k1 keypair and sign the message.
-    let signing_key =
-        SigningKey::from_bytes(args.signing_key.as_bytes().into()).expect("invalid signing key"); // Serialize with `::to_bytes()`
+    let signing_key = SigningKey::from_bytes(
+        (&hex::decode(args.signing_key).expect("decode hex signing key")[..]).into(),
+    )
+    .expect("invalid signing key");
     let message = b"I hold enough RZ0!";
     let signature: Signature = signing_key.sign(message);
 
