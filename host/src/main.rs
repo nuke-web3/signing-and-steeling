@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use alloy_primitives::{address, hex, Address};
-use alloy_signer_local::LocalSigner;
 use alloy_sol_types::{sol, SolCall, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -48,9 +47,10 @@ const CALLER: Address = address!("f08A50178dfcDe18524640EA6618a1f965821715");
 #[derive(Parser, Debug)]
 #[command(about, long_about = None)]
 struct Args {
-    // /// URL of the RPC endpoint
-    // #[arg(short, long, env = "RPC_URL")]
-    // rpc_url: String,
+    /// URL of the RPC endpoint
+    /// https://sepolia.dev/ lists a few free for Sepolia to default to
+    #[arg(short, long, env = "RPC_URL", default_value = "https://rpc2.sepolia.org/")]
+    rpc_url: String,
 
     /// Signing key of account to prove balance
     #[arg(
@@ -80,17 +80,16 @@ fn main() -> Result<()> {
         (&hex::decode(args.signing_key).expect("decode hex signing key")[..]).into(),
     )
     .expect("invalid signing key");
-    let message = b"I hold enough RZ0 adfnoiwneifweoifnwoifewefwnfe!";
+    let message = b"I hold enough RZ0 tokes! Well, at least for the commited block height...";
     let signature: Signature = signing_key.sign(message);
 
-    let caller = LocalSigner::from_signing_key(signing_key.clone()).address();
-
-    dbg!(caller);
+    let verifying_key = signing_key.verifying_key();
+    let caller = alloy_signer::utils::public_key_to_address(verifying_key);
 
     // Guest inputs for the locally signed message
 
     let sig_msg_input: (EncodedPoint, &[u8], &Signature) = (
-        signing_key.verifying_key().to_encoded_point(true),
+        verifying_key.to_encoded_point(true),
         message,
         &signature,
     );
@@ -99,38 +98,39 @@ fn main() -> Result<()> {
     // Setting up: Steel view call
     // ------------------------------------------------------------------------
 
-    // // Create an EVM environment from an RPC endpoint and a block number. If no block number is
-    // // provided, the latest block is used.
-    // let mut env = EthEvmEnv::from_rpc(&args.rpc_url, None)?;
-    // //  The `with_chain_spec` method is used to specify the chain configuration.
-    // env = env.with_chain_spec(&ETH_SEPOLIA_CHAIN_SPEC);
+    // Create an EVM environment from an RPC endpoint and a block number. If no block number is
+    // provided, the latest block is used.
+    let mut env = EthEvmEnv::from_rpc(&args.rpc_url, None)?;
+    //  The `with_chain_spec` method is used to specify the chain configuration.
+    env = env.with_chain_spec(&ETH_SEPOLIA_CHAIN_SPEC);
 
-    // let commitment = env.block_commitment();
+    let commitment = env.block_commitment();
 
-    // // Preflight the call to prepare the input that is required to execute the function in
-    // // the guest without RPC access. It also returns the result of the call.
-    // let mut contract = Contract::preflight(CONTRACT, &mut env);
-    // let returns = contract.call_builder(&CALL).from(CALLER).call()?;
-    // println!(
-    //     "For block {} `{}` returns: {}",
-    //     env.header().number(),
-    //     IERC20::balanceOfCall::SIGNATURE,
-    //     returns._0
-    // );
+    // Preflight the call to prepare the input that is required to execute the function in
+    // the guest without RPC access. It also returns the result of the call.
+    let mut contract = Contract::preflight(CONTRACT, &mut env);
+    let returns = contract.call_builder(&CALL).from(CALLER).call()?;
+    println!(
+        "For block {} `{}` returns: {}",
+        env.header().number(),
+        IERC20::balanceOfCall::SIGNATURE,
+        returns._0
+    );
 
-    // // Finally, construct the input from the environment.
-    // let evm_input = env.into_input()?;
+    // Finally, construct the input from the environment.
+    let evm_input = env.into_input()?;
 
     // ------------------------------------------------------------------------
     // Takeoff: Execution & Proof generation
     // ------------------------------------------------------------------------
 
+    // FIXME: no proof, execution only!
     println!("Running the guest with the constructed input and locally signed message:");
     let session_info = {
         let env = ExecutorEnv::builder()
-            // .write(&evm_input)
-            // .unwrap()
             .write(&sig_msg_input)
+            .unwrap()
+            .write(&evm_input)
             .unwrap()
             .build()
             .context("Failed to build exec env")?;
@@ -139,31 +139,25 @@ fn main() -> Result<()> {
             .context("failed to run executor")?
     };
 
-    dbg!(session_info);
-
-    // FIXME: no proof, execution only!
-
     // ------------------------------------------------------------------------
     // Stick the landing: Test our assumptions and constrains hold
     // ------------------------------------------------------------------------
 
-    // // FIXME how to use mix serial and bytes parsing?
-    // let (local_verifying_key, receipt_message, evm_committed_bytes): (
-    //     EncodedPoint,
-    //     Vec<u8>,
-    //     Vec<u8>, // FIXME what type?
-    // ) = session_info.journal.decode().unwrap();
+    let (evm_committed_bytes, receipt_verifying_key, receipt_message): (
+        Vec<u8>,
+        EncodedPoint,
+        Vec<u8>,
+    ) = session_info.journal.decode().unwrap();
 
-    // println!(
-    //     "Verified the signature over message {:?} with key {}",
-    //     std::str::from_utf8(&receipt_message[..]).unwrap(),
-    //     local_verifying_key,
-    // );
+    println!(
+        "Verified the signature over message {:?} with key {}",
+        std::str::from_utf8(&receipt_message[..]).unwrap(),
+        receipt_verifying_key,
+    );
 
-    // // The commitment in the journal should match.
-    // // let bytes = session_info.journal.as_ref();
-    // assert!(evm_committed_bytes.starts_with(&commitment.abi_encode()));
+    // The commitment in the journal should match.
+    // let bytes = session_info.journal.as_ref();
+    assert!(evm_committed_bytes.starts_with(&commitment.abi_encode()));
 
     Ok(())
 }
-
