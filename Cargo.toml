@@ -35,8 +35,11 @@ opt-level = 3
 opt-level = 3
 
 [profile.release]
+# From ECDSA example in risc0 monorepo
+# Hack for development, compile times at the host bin are a lot better with lto="light"
+# cargo r -r
 debug = 1
-lto = true
+lto = "thin"
 
 [profile.release.build-override]
 opt-level = 3
