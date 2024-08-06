@@ -33,15 +33,8 @@ sol! {
     }
 }
 
-/// Function to call, implements the [SolCall] trait.
-const CALL: IERC20::balanceOfCall = IERC20::balanceOfCall {
-    account: address!("9737100D2F42a196DE56ED0d1f6fF598a250E7E4"),
-};
-
 /// Address of the deployed contract to call the function on (USDT contract on Sepolia).
 const CONTRACT: Address = address!("aA8E23Fb1079EA71e0a56F48a2aA51851D8433D0");
-/// Address of the caller.
-const CALLER: Address = address!("f08A50178dfcDe18524640EA6618a1f965821715");
 
 /// Simple program to show the use of Ethereum contract data inside the guest.
 #[derive(Parser, Debug)]
@@ -49,7 +42,12 @@ const CALLER: Address = address!("f08A50178dfcDe18524640EA6618a1f965821715");
 struct Args {
     /// URL of the RPC endpoint
     /// https://sepolia.dev/ lists a few free for Sepolia to default to
-    #[arg(short, long, env = "RPC_URL", default_value = "https://rpc2.sepolia.org/")]
+    #[arg(
+        short,
+        long,
+        env = "RPC_URL",
+        default_value = "https://rpc2.sepolia.org/"
+    )]
     rpc_url: String,
 
     /// Signing key of account to prove balance
@@ -84,12 +82,14 @@ fn main() -> Result<()> {
     let signature: Signature = signing_key.sign(message);
 
     let verifying_key = signing_key.verifying_key();
+    // TODO: We assume it's more efficient to pass a point and address seporately into the guest.
+    // This isn't ideal devex, needs to be brenched and refactored if needed!
     let caller = alloy_signer::utils::public_key_to_address(verifying_key);
 
     // Guest inputs for the locally signed message
-
-    let sig_msg_input: (EncodedPoint, &[u8], &Signature) = (
+    let sig_msg_input: (EncodedPoint, Address, &[u8], &Signature) = (
         verifying_key.to_encoded_point(true),
+        caller,
         message,
         &signature,
     );
@@ -106,10 +106,13 @@ fn main() -> Result<()> {
 
     let commitment = env.block_commitment();
 
+    // Function to call, implements the [SolCall] trait.
+    let call = IERC20::balanceOfCall { account: caller };
+
     // Preflight the call to prepare the input that is required to execute the function in
     // the guest without RPC access. It also returns the result of the call.
     let mut contract = Contract::preflight(CONTRACT, &mut env);
-    let returns = contract.call_builder(&CALL).from(CALLER).call()?;
+    let returns = contract.call_builder(&call).call()?;
     println!(
         "For block {} `{}` returns: {}",
         env.header().number(),
