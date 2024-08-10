@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use alloy_primitives::{address, hex, Address};
+use alloy_primitives::{address, hex, Address, Signature as AlloySignature};
 use alloy_sol_types::{sol, SolCall, SolValue};
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -80,16 +80,18 @@ fn main() -> Result<()> {
     .expect("invalid signing key");
     let message = b"I hold enough RZ0 tokes! Well, at least for the commited block height...";
     let signature: Signature = signing_key.sign(message);
+    let alloy_sig = AlloySignature::from_signature_and_parity(signature, false).expect("Cannot wrap signature");
+    let address = alloy_sig.recover_address_from_msg(&message).expect("Cannot get address");
 
     let verifying_key = signing_key.verifying_key();
     // TODO: We assume it's more efficient to pass a point and address seporately into the guest.
     // This isn't ideal devex, needs to be brenched and refactored if needed!
-    let caller = alloy_signer::utils::public_key_to_address(verifying_key);
+    let signer = alloy_signer::utils::public_key_to_address(verifying_key);
 
     // Guest inputs for the locally signed message
     let sig_msg_input: (EncodedPoint, Address, &[u8], &Signature) = (
         verifying_key.to_encoded_point(true),
-        caller,
+        signer,
         message,
         &signature,
     );
@@ -107,14 +109,14 @@ fn main() -> Result<()> {
     let commitment = env.block_commitment();
 
     // Function to call, implements the [SolCall] trait.
-    let call = IERC20::balanceOfCall { account: caller };
+    let call = IERC20::balanceOfCall { account: signer };
 
     // Preflight the call to prepare the input that is required to execute the function in
     // the guest without RPC access. It also returns the result of the call.
     let mut contract = Contract::preflight(CONTRACT, &mut env);
     let returns = contract.call_builder(&call).call()?;
     println!(
-        "For block {} `{}` returns: {}",
+        "HOST: For block {} `{}` returns: {}",
         env.header().number(),
         IERC20::balanceOfCall::SIGNATURE,
         returns._0
@@ -127,8 +129,11 @@ fn main() -> Result<()> {
     // Takeoff: Execution & Proof generation
     // ------------------------------------------------------------------------
 
-    // FIXME: no proof, execution only!
-    println!("Running the guest with the constructed input and locally signed message:");
+    // FIXME: no proof, execution only! When testing, we should never need to 
+    // make *real* proofs, in testing as in the zkVM we prove execution is 
+    // *exactly identical* to the result of that execution.
+    // If there is a problem in the proof, it's a RISC Zero team issue more than likely, not yours.
+    // If you *need* a proof, we can mock things using [risc0_zkvm::FakeReceipt]s in DEV_MODE.
     let session_info = {
         let env = ExecutorEnv::builder()
             .write(&sig_msg_input)
@@ -153,7 +158,7 @@ fn main() -> Result<()> {
     ) = session_info.journal.decode().unwrap();
 
     println!(
-        "Verified the signature over message {:?} with key {}",
+        "HOST: Verified the signature over message {:?} with key {}",
         std::str::from_utf8(&receipt_message[..]).unwrap(),
         receipt_verifying_key,
     );
